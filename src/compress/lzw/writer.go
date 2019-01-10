@@ -15,6 +15,7 @@ import (
 type writer interface {
 	io.ByteWriter
 	Flush() error
+	Reset(io.Writer)
 }
 
 // An errWriteCloser is an io.WriteCloser that always returns a given error.
@@ -195,6 +196,27 @@ loop:
 	return n, nil
 }
 
+// Reset flushes any pending output and prepares the encoder for a new input.
+// It does not flushes underlying writer.
+//
+// Underlying writer will be redefined to w.
+func (e *encoder) Reset(w io.Writer) error {
+	e.w.Reset(w)
+
+	*e = encoder{
+		w:         e.w,
+		order:     e.order,
+		write:     e.write,
+		width:     1 + e.litWidth,
+		litWidth:  e.litWidth,
+		hi:        1<<e.litWidth + 1,
+		overflow:  1 << (e.litWidth + 1),
+		savedCode: invalidCode,
+	}
+
+	return nil
+}
+
 // Close closes the encoder, flushing any pending output. It does not close or
 // flush e's underlying writer.
 func (e *encoder) Close() error {
@@ -206,6 +228,12 @@ func (e *encoder) Close() error {
 	}
 	// Make any future calls to Write return errClosed.
 	e.err = errClosed
+
+	return e.Flush()
+}
+
+// Flush flushes any pending output. It does not flushes underlying writer.
+func (e *encoder) Flush() error {
 	// Write the savedCode if valid.
 	if e.savedCode != invalidCode {
 		if err := e.write(e, e.savedCode); err != nil {

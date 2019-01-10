@@ -5,6 +5,7 @@
 package lzw
 
 import (
+	"bytes"
 	"fmt"
 	"internal/testenv"
 	"io"
@@ -13,6 +14,10 @@ import (
 	"os"
 	"runtime"
 	"testing"
+)
+
+const (
+	testString = "test string"
 )
 
 var filenames = []string{
@@ -106,6 +111,22 @@ func TestWriter(t *testing.T) {
 	}
 }
 
+func TestWriterReuse(t *testing.T) {
+	buf := &bytes.Buffer{}
+	w := NewWriter(buf, LSB, 8)
+	w.Write([]byte(testString))
+	w.(interface{ Flush() error }).Flush()
+	strA := buf.String()
+	w.(interface{ Reset(io.Writer) error }).Reset(buf)
+	buf.Reset()
+	w.Write([]byte(testString))
+	w.(interface{ Flush() error }).Flush()
+	strB := buf.String()
+	if strA != strB {
+		t.Errorf("Got a different output string on the seconding encoding of the same input string: %v != %v", []byte(strA), []byte(strB))
+	}
+}
+
 func TestWriterReturnValues(t *testing.T) {
 	w := NewWriter(ioutil.Discard, LSB, 8)
 	n, err := w.Write([]byte("asdf"))
@@ -133,6 +154,7 @@ func BenchmarkEncoder(b *testing.B) {
 		b.Fatalf("test file has no data")
 	}
 
+	b.ResetTimer()
 	for e := 4; e <= 6; e++ {
 		n := int(math.Pow10(e))
 		buf0 := buf
@@ -151,6 +173,39 @@ func BenchmarkEncoder(b *testing.B) {
 				w := NewWriter(ioutil.Discard, LSB, 8)
 				w.Write(buf1)
 				w.Close()
+			}
+		})
+	}
+}
+
+func BenchmarkEncoderReuse(b *testing.B) {
+	buf, err := ioutil.ReadFile("../testdata/e.txt")
+	if err != nil {
+		b.Fatal(err)
+	}
+	if len(buf) == 0 {
+		b.Fatalf("test file has no data")
+	}
+
+	w := NewWriter(ioutil.Discard, LSB, 8)
+	b.ResetTimer()
+	for e := 4; e <= 6; e++ {
+		n := int(math.Pow10(e))
+		buf0 := buf
+		buf1 := make([]byte, n)
+		for i := 0; i < n; i += len(buf0) {
+			if len(buf0) > n-i {
+				buf0 = buf0[:n-i]
+			}
+			copy(buf1[i:], buf0)
+		}
+		buf0 = nil
+		runtime.GC()
+		b.Run(fmt.Sprint("1e", e), func(b *testing.B) {
+			b.SetBytes(int64(n))
+			for i := 0; i < b.N; i++ {
+				w.Write(buf1)
+				w.(interface{ Flush() error }).Flush()
 			}
 		})
 	}
