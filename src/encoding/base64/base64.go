@@ -230,9 +230,8 @@ func (e *encoder) Write(p []byte) (n int, err error) {
 	return
 }
 
-// Close flushes any pending output from the encoder.
-// It is an error to call Write after calling Close.
-func (e *encoder) Close() error {
+// Flush flushes any pending output from the encoder.
+func (e *encoder) Flush() error {
 	// If there's anything left in the buffer, flush it out
 	if e.err == nil && e.nbuf > 0 {
 		e.enc.Encode(e.out[:], e.buf[:e.nbuf])
@@ -240,6 +239,12 @@ func (e *encoder) Close() error {
 		e.nbuf = 0
 	}
 	return e.err
+}
+
+// Close flushes any pending output from the encoder.
+// It is an error to call Write after calling Close.
+func (e *encoder) Close() error {
+	return e.Flush()
 }
 
 // NewEncoder returns a new base64 stream encoder. Data written to
